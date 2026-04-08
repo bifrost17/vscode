@@ -17,7 +17,7 @@ import { localize } from '../../../../../../nls.js';
 import { AgentProvider, AgentSession, IAgentAttachment, type IAgentConnection } from '../../../../../../platform/agentHost/common/agentService.js';
 import { IAgentSubscription } from '../../../../../../platform/agentHost/common/state/agentSubscription.js';
 import { ISessionTruncatedAction } from '../../../../../../platform/agentHost/common/state/protocol/actions.js';
-import { ICustomizationRef, type IProtectedResourceMetadata } from '../../../../../../platform/agentHost/common/state/protocol/state.js';
+import { ICustomizationRef, TerminalClaimKind, type IProtectedResourceMetadata } from '../../../../../../platform/agentHost/common/state/protocol/state.js';
 import { ActionType, ISessionTurnStartedAction, type ISessionAction } from '../../../../../../platform/agentHost/common/state/sessionActions.js';
 import { AHP_AUTH_REQUIRED, ProtocolError } from '../../../../../../platform/agentHost/common/state/sessionProtocol.js';
 import { AttachmentType, getToolFileEdits, PendingMessageKind, ResponsePartKind, StateComponents, ToolCallCancellationReason, ToolCallConfirmationReason, ToolCallStatus, ToolResultContentType, TurnState, type IMessageAttachment, type IRootState, type ISessionState, type IToolCallState, type ITurn } from '../../../../../../platform/agentHost/common/state/sessionState.js';
@@ -26,6 +26,7 @@ import { IInstantiationService } from '../../../../../../platform/instantiation/
 import { ILogService } from '../../../../../../platform/log/common/log.js';
 import { IProductService } from '../../../../../../platform/product/common/productService.js';
 import { IWorkspaceContextService } from '../../../../../../platform/workspace/common/workspace.js';
+import { ITerminalChatService } from '../../../../terminal/browser/terminal.js';
 import { ChatRequestQueueKind, IChatProgress, IChatService, IChatToolInvocation, ToolConfirmKind } from '../../../common/chatService/chatService.js';
 import { IChatSession, IChatSessionContentProvider, IChatSessionHistoryItem, IChatSessionItem, IChatSessionRequestHistoryItem } from '../../../common/chatSessionsService.js';
 import { ChatAgentLocation, ChatModeKind } from '../../../common/constants.js';
@@ -34,7 +35,7 @@ import { ChatToolInvocation } from '../../../common/model/chatProgressTypes/chat
 import { IChatAgentData, IChatAgentImplementation, IChatAgentRequest, IChatAgentResult, IChatAgentService } from '../../../common/participants/chatAgents.js';
 import { getAgentHostIcon } from '../agentSessions.js';
 import { AgentHostEditingSession } from './agentHostEditingSession.js';
-import { activeTurnToProgress, finalizeToolInvocation, toolCallStateToInvocation, turnsToHistory } from './stateToProgressAdapter.js';
+import { activeTurnToProgress, finalizeToolInvocation, getTerminalContentUri, toolCallStateToInvocation, turnsToHistory } from './stateToProgressAdapter.js';
 
 // =============================================================================
 // AgentHostSessionHandler - renderer-side handler for a single agent host
@@ -43,6 +44,20 @@ import { activeTurnToProgress, finalizeToolInvocation, toolCallStateToInvocation
 // changes, and dispatches client actions (turnStarted, toolCallConfirmed,
 // turnCancelled) back to the server.
 // =============================================================================
+
+function makeAhpTerminalToolSessionId(terminalUri: string, session: URI): string {
+	return JSON.stringify({ terminal: terminalUri, session: session.toString() });
+}
+
+function parseAhpTerminalToolSessionId(id: string): { terminal: string; session: string } | undefined {
+	try {
+		const parsed = JSON.parse(id);
+		if (typeof parsed?.terminal === 'string' && typeof parsed?.session === 'string') {
+			return parsed;
+		}
+	} catch { /* not an AHP terminal session ID */ }
+	return undefined;
+}
 
 // =============================================================================
 // Chat session
@@ -201,9 +216,29 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 		@IProductService private readonly _productService: IProductService,
 		@IWorkspaceContextService private readonly _workspaceContextService: IWorkspaceContextService,
 		@IInstantiationService private readonly _instantiationService: IInstantiationService,
+		@ITerminalChatService private readonly _terminalChatService: ITerminalChatService,
 	) {
 		super();
 		this._config = config;
+
+		// When the user clicks "Continue in Background" on an AHP terminal
+		// tool, narrow the terminal claim so the server-side tool handler
+		// can detect it and return early.
+		this._register(this._terminalChatService.onDidContinueInBackground(terminalToolSessionId => {
+			const parsed = parseAhpTerminalToolSessionId(terminalToolSessionId);
+			if (!parsed) {
+				return;
+			}
+			this._logService.info(`[AgentHost] Continue in background: terminal=${parsed.terminal}, session=${parsed.session}`);
+			this._config.connection.dispatch({
+				type: ActionType.TerminalClaimed,
+				terminal: parsed.terminal,
+				claim: {
+					kind: TerminalClaimKind.Session,
+					session: parsed.session,
+				},
+			});
+		}));
 
 		// Register an editing session provider for this handler's session type
 		this._register(this._chatEditingService.registerEditingSessionProvider(
@@ -716,10 +751,12 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 									? tc.invocationMessage
 									: new MarkdownString(tc.invocationMessage.markdown);
 								if (tc.content?.some(c => c.type === ToolResultContentType.Terminal) && tc.toolInput) {
+									const terminalUri = getTerminalContentUri(tc.content);
 									existing.toolSpecificData = {
 										kind: 'terminal',
 										commandLine: { original: tc.toolInput },
 										language: 'shellscript',
+										terminalToolSessionId: terminalUri ? makeAhpTerminalToolSessionId(terminalUri, backendSession) : undefined,
 									};
 								}
 							}
@@ -944,10 +981,13 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 										? tc.invocationMessage
 										: new MarkdownString(tc.invocationMessage.markdown);
 									if (tc.content?.some(c => c.type === ToolResultContentType.Terminal) && tc.toolInput) {
+										const terminalUri = getTerminalContentUri(tc.content);
 										existing.toolSpecificData = {
 											kind: 'terminal',
 											commandLine: { original: tc.toolInput },
 											language: 'shellscript',
+											terminalToolSessionId: terminalUri ? makeAhpTerminalToolSessionId(terminalUri, session) : undefined,
+											terminalCommandUri: terminalUri ? URI.parse(terminalUri) : undefined,
 										};
 									}
 								}
@@ -1155,10 +1195,12 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 									? tc.invocationMessage
 									: new MarkdownString(tc.invocationMessage.markdown);
 								if (tc.content?.some(c => c.type === ToolResultContentType.Terminal) && tc.toolInput) {
+									const terminalUri = getTerminalContentUri(tc.content);
 									existing.toolSpecificData = {
 										kind: 'terminal',
 										commandLine: { original: tc.toolInput },
 										language: 'shellscript',
+										terminalToolSessionId: terminalUri ? makeAhpTerminalToolSessionId(terminalUri, backendSession) : undefined,
 									};
 								}
 							}

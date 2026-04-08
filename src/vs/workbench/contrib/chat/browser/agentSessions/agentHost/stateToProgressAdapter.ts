@@ -17,7 +17,7 @@ import { hasKey } from '../../../../../../base/common/types.js';
  * Finds a terminal content block in a tool call's content array.
  * Returns the terminal URI if found.
  */
-function getTerminalContentUri(content: IToolResultContent[] | undefined): string | undefined {
+export function getTerminalContentUri(content: IToolResultContent[] | undefined): string | undefined {
 	if (!content) {
 		return undefined;
 	}
@@ -282,6 +282,7 @@ export function toolCallStateToInvocation(tc: IToolCallState): ChatToolInvocatio
 				commandLine: { original: tc.toolInput || '' },
 				language: 'shellscript',
 				terminalCommandUri: URI.parse(terminalUri),
+				terminalToolSessionId: terminalUri,
 			} satisfies IChatTerminalToolInvocationData;
 		}
 	}
@@ -337,6 +338,7 @@ export function finalizeToolInvocation(invocation: ChatToolInvocation, tc: ITool
 			kind: 'terminal',
 			commandLine: { original: commandInput },
 			language: 'shellscript',
+			terminalToolSessionId: terminalContentUri ?? existing?.terminalToolSessionId,
 			terminalCommandOutput: toolOutput !== undefined ? { text: toolOutput } : undefined,
 			terminalCommandState: { exitCode: isCompleted && tc.success ? 0 : 1 },
 			terminalCommandUri: terminalContentUri ? URI.parse(terminalContentUri) : existing?.terminalCommandUri,
