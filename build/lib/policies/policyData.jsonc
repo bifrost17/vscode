@@ -39,6 +39,21 @@
     ],
     "policies": [
         {
+            "key": "chat.agentsApp.enabled",
+            "name": "AgentsAppEnabled",
+            "category": "InteractiveSession",
+            "minimumVersion": "1.116",
+            "localization": {
+                "description": {
+                    "key": "chat.agentsApp.enabled.policy",
+                    "value": "Controls whether the Agents app is enabled. When disabled by policy, users cannot use the Agents app."
+                }
+            },
+            "type": "boolean",
+            "default": true,
+            "included": false
+        },
+        {
             "key": "extensions.gallery.serviceUrl",
             "name": "ExtensionGalleryServiceUrl",
             "category": "Extensions",
