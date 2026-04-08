@@ -695,6 +695,10 @@
 		{
 			"name": "vs/sessions/contrib/chatDebug",
 			"project": "vscode-sessions"
+		},
+		{
+			"name": "vs/sessions/contrib/policyBlocked",
+			"project": "vscode-sessions"
 		}
 	]
 }

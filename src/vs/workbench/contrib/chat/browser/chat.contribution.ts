@@ -202,6 +202,25 @@ configurationRegistry.registerConfiguration({
 			default: false,
 			tags: ['experimental'],
 		},
+		[ChatConfiguration.AgentsAppEnabled]: {
+			type: 'boolean',
+			description: nls.localize('chat.agentsApp.enabled', "Controls whether the Agents app is enabled. When disabled, the Agents app shows a blocked screen and cannot be used."),
+			default: true,
+			included: false,
+			scope: ConfigurationScope.APPLICATION_MACHINE,
+			policy: {
+				name: 'AgentsAppEnabled',
+				category: PolicyCategory.InteractiveSession,
+				minimumVersion: '1.116',
+				value: (policyData) => policyData.chat_preview_features_enabled === false || policyData.chat_agent_enabled === false ? false : undefined,
+				localization: {
+					description: {
+						key: 'chat.agentsApp.enabled.policy',
+						value: nls.localize('chat.agentsApp.enabled.policy', "Controls whether the Agents app is enabled. When disabled by policy, users cannot use the Agents app."),
+					}
+				},
+			}
+		},
 		'chat.fontSize': {
 			type: 'number',
 			description: nls.localize('chat.fontSize', "Controls the font size in pixels in chat messages."),

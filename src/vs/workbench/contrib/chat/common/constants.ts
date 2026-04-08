@@ -69,6 +69,7 @@ export enum ChatConfiguration {
 	CustomizationsProviderApi = 'chat.customizations.providerApi.enabled',
 	ToolConfirmationCarousel = 'chat.tools.confirmationCarousel.enabled',
 	DefaultNewSessionMode = 'chat.newSession.defaultMode',
+	AgentsAppEnabled = 'chat.agentsApp.enabled',
 }
 
 /**
