@@ -5,7 +5,7 @@
 
 import './media/sessionsPolicyBlocked.css';
 import { Disposable, toDisposable } from '../../../../base/common/lifecycle.js';
-import { $, append, EventType, addDisposableListener } from '../../../../base/browser/dom.js';
+import { $, append, EventType, addDisposableListener, getWindow } from '../../../../base/browser/dom.js';
 import { localize } from '../../../../nls.js';
 import { ThemeIcon } from '../../../../base/common/themables.js';
 import { Codicon } from '../../../../base/common/codicons.js';
@@ -22,15 +22,18 @@ export class SessionsPolicyBlockedOverlay extends Disposable {
 		super();
 
 		this.overlay = append(container, $('.sessions-policy-blocked-overlay'));
-		this.overlay.setAttribute('role', 'alert');
+		this.overlay.setAttribute('role', 'dialog');
+		this.overlay.setAttribute('aria-modal', 'true');
 		this.overlay.setAttribute('aria-label', localize('policyBlocked.aria', "Agents app disabled by organization policy"));
+		this.overlay.tabIndex = -1;
+		this.overlay.focus();
 		this._register(toDisposable(() => this.overlay.remove()));
 
-		// Block all keyboard interaction
-		this._register(addDisposableListener(this.overlay, EventType.KEY_DOWN, (e: KeyboardEvent) => {
+		// Block all keyboard interaction while the overlay is present.
+		this._register(addDisposableListener(getWindow(this.overlay), EventType.KEY_DOWN, (e: KeyboardEvent) => {
 			e.preventDefault();
 			e.stopPropagation();
-		}));
+		}, true));
 
 		// Block all mouse interaction on the overlay background
 		this._register(addDisposableListener(this.overlay, EventType.MOUSE_DOWN, e => {
