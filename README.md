@@ -1,78 +1,72 @@
-# Visual Studio Code - Open Source ("Code - OSS")
-[![Feature Requests](https://img.shields.io/github/issues/microsoft/vscode/feature-request.svg)](https://github.com/microsoft/vscode/issues?q=is%3Aopen+is%3Aissue+label%3Afeature-request+sort%3Areactions-%2B1-desc)
-[![Bugs](https://img.shields.io/github/issues/microsoft/vscode/bug.svg)](https://github.com/microsoft/vscode/issues?utf8=✓&q=is%3Aissue+is%3Aopen+label%3Abug)
-[![Gitter](https://img.shields.io/badge/chat-on%20gitter-yellow.svg)](https://gitter.im/Microsoft/vscode)
+# Open Cowork
 
-## The Repository
+사내 LLM 기반 AI 문서작업 데스크톱 앱. VS Code를 포크하여 비개발자용으로 경량화하고, Claude Code 에이전트 엔진을 연결한다.
 
-This repository ("`Code - OSS`") is where we (Microsoft) develop the [Visual Studio Code](https://code.visualstudio.com) product together with the community. Not only do we work on code and issues here, we also publish our [roadmap](https://github.com/microsoft/vscode/wiki/Roadmap), [monthly iteration plans](https://github.com/microsoft/vscode/wiki/Iteration-Plans), and our [endgame plans](https://github.com/microsoft/vscode/wiki/Running-the-Endgame). This source code is available to everyone under the standard [MIT license](https://github.com/microsoft/vscode/blob/main/LICENSE.txt).
+## 배경
 
-## Visual Studio Code
+Claude Cowork는 Electron 데스크톱 앱(클라이언트)에서 Hyper-V VM(서버)으로 요청을 보내는 클라이언트-서버 아키텍처다. VM 안에는 Claude Code 엔진이 기동되어 있고, 클라이언트-서버 간 API는 결국 **텍스트 + 파일 입출력**으로 추상화된다.
 
-<p align="center">
-  <img alt="VS Code in action" src="https://user-images.githubusercontent.com/35271042/118224532-3842c400-b438-11eb-923d-a5f66fa6785a.png">
-</p>
+이 구조는 VS Code + Claude Code 확장의 구조와 본질적으로 동일하다. 따라서 Electron 앱을 처음부터 만드는 대신 **VS Code를 포크**하여 비개발자 전용으로 재구성한다.
 
-[Visual Studio Code](https://code.visualstudio.com) is a distribution of the `Code - OSS` repository with Microsoft-specific customizations released under a traditional [Microsoft product license](https://code.visualstudio.com/License/).
+## 접근 방식
 
-[Visual Studio Code](https://code.visualstudio.com) combines the simplicity of a code editor with what developers need for their core edit-build-debug cycle. It provides comprehensive code editing, navigation, and understanding support along with lightweight debugging, a rich extensibility model, and lightweight integration with existing tools.
+**Cursor 모델 참고**: Cursor가 VS Code를 포크하여 개발자용 AI 코딩 도구를 만든 것처럼, Open Cowork는 VS Code를 포크하여 **비개발자용 AI 문서작업 도구**를 만든다.
 
-Visual Studio Code is updated monthly with new features and bug fixes. You can download it for Windows, macOS, and Linux on [Visual Studio Code's website](https://code.visualstudio.com/Download). To get the latest releases every day, install the [Insiders build](https://code.visualstudio.com/insiders).
+1. **덜어낼 것** — 디버거, Git UI, 터미널 직접 노출, 빌드 태스크, 확장 마켓플레이스 등 개발자 전용 기능
+2. **유지할 것** — 파일 탐색기, 에디터/미리보기, 탭/패널 레이아웃, 검색, 설정 UI
+3. **추가할 것** — AI 대화 패널(Chat/Cowork), 권한 승인 UI, 스케줄 사이드바, 프로젝트 마법사
+4. **연결할 것** — Claude Code 에이전트 엔진(VM 내부) ↔ 포크된 VS Code
 
-## Contributing
+## 아키텍처
 
-There are many ways in which you can participate in this project, for example:
+```
+┌──────────────────────────────────┐
+│  Open Cowork (VS Code Fork)     │  Windows 데스크톱
+│  - 비개발자용 경량 UI            │
+│  - AI 대화 패널                  │
+│  - 파일 탐색기 / 미리보기        │
+└──────────┬───────────────────────┘
+           │ stdio (텍스트 + 파일)
+┌──────────▼───────────────────────┐
+│  Hyper-V VM (Ubuntu 22.04)      │
+│  ┌─────────────────────────────┐ │
+│  │ Claude Code Engine          │ │
+│  │ - 에이전틱 루프, 40+ 도구   │ │
+│  │ - 메모리, 스킬, 훅, 권한    │ │
+│  │ - LLM Provider Adapter      │ │
+│  │   (OpenAI 호환 API)         │ │
+│  └─────────────────────────────┘ │
+└──────────┬───────────────────────┘
+           │ OpenAI API
+┌──────────▼───────────────────────┐
+│  사내 LLM (vLLM + Qwen3.5)     │
+└──────────────────────────────────┘
+```
 
-* [Submit bugs and feature requests](https://github.com/microsoft/vscode/issues), and help us verify as they are checked in
-* Review [source code changes](https://github.com/microsoft/vscode/pulls)
-* Review the [documentation](https://github.com/microsoft/vscode-docs) and make pull requests for anything from typos to additional and new content
+## 핵심 원칙
 
-If you are interested in fixing issues and contributing directly to the code base,
-please see the document [How to Contribute](https://github.com/microsoft/vscode/wiki/How-to-Contribute), which covers the following:
+- **Engine-as-Base**: Claude Code 엔진을 그대로 활용. 재구현하지 않는다.
+- **LLM Abstraction**: Anthropic API → OpenAI 호환 API 어댑터로 사내 LLM 연결.
+- **Non-Developer First**: 비개발자가 문서작업에 사용. CLI 지식 불필요.
+- **Data Locality**: 모든 데이터는 로컬 저장. 외부 전송 없음.
 
-* [How to build and run from source](https://github.com/microsoft/vscode/wiki/How-to-Contribute)
-* [The development workflow, including debugging and running tests](https://github.com/microsoft/vscode/wiki/How-to-Contribute#debugging)
-* [Coding guidelines](https://github.com/microsoft/vscode/wiki/Coding-Guidelines)
-* [Submitting pull requests](https://github.com/microsoft/vscode/wiki/How-to-Contribute#pull-requests)
-* [Finding an issue to work on](https://github.com/microsoft/vscode/wiki/How-to-Contribute#where-to-contribute)
-* [Contributing to translations](https://aka.ms/vscodeloc)
+## 대상 사용자
 
-## Feedback
+비개발자. 문서작업(Excel, PPT, Word, PDF, 데이터 분석)이 주 용도.
 
-* Ask a question on [Stack Overflow](https://stackoverflow.com/questions/tagged/vscode)
-* [Request a new feature](CONTRIBUTING.md)
-* Upvote [popular feature requests](https://github.com/microsoft/vscode/issues?q=is%3Aopen+is%3Aissue+label%3Afeature-request+sort%3Areactions-%2B1-desc)
-* [File an issue](https://github.com/microsoft/vscode/issues)
-* Connect with the extension author community on [GitHub Discussions](https://github.com/microsoft/vscode-discussions/discussions) or [Slack](https://aka.ms/vscode-dev-community)
-* Follow [@code](https://x.com/code) and let us know what you think!
+## 플랫폼
 
-See our [wiki](https://github.com/microsoft/vscode/wiki/Feedback-Channels) for a description of each of these channels and information on some other available community-driven channels.
+Windows 10/11 Pro (Hyper-V 필수). macOS 미지원.
 
-## Related Projects
+## 기술 스택
 
-Many of the core components and extensions to VS Code live in their own repositories on GitHub. For example, the [node debug adapter](https://github.com/microsoft/vscode-node-debug) and the [mono debug adapter](https://github.com/microsoft/vscode-mono-debug) repositories are separate from each other. For a complete list, please visit the [Related Projects](https://github.com/microsoft/vscode/wiki/Related-Projects) page on our [wiki](https://github.com/microsoft/vscode/wiki).
+- **클라이언트**: VS Code Fork (Electron + TypeScript)
+- **에이전트 엔진**: Claude Code (TypeScript, Bun 런타임)
+- **VM**: Hyper-V, Ubuntu 22.04, VirtioFS
+- **LLM**: vLLM + Qwen3.5 (OpenAI 호환 API)
 
-## Bundled Extensions
+## 참고 자료
 
-VS Code includes a set of built-in extensions located in the [extensions](extensions) folder, including grammars and snippets for many languages. Extensions that provide rich language support (inline suggestions, Go to Definition) for a language have the suffix `language-features`. For example, the `json` extension provides coloring for `JSON` and the `json-language-features` extension provides rich language support for `JSON`.
-
-## Development Container
-
-This repository includes a Visual Studio Code Dev Containers / GitHub Codespaces development container.
-
-* For [Dev Containers](https://aka.ms/vscode-remote/download/containers), use the **Dev Containers: Clone Repository in Container Volume...** command which creates a Docker volume for better disk I/O on macOS and Windows.
-  * If you already have VS Code and Docker installed, you can also click [here](https://vscode.dev/redirect?url=vscode://ms-vscode-remote.remote-containers/cloneInVolume?url=https://github.com/microsoft/vscode) to get started. This will cause VS Code to automatically install the Dev Containers extension if needed, clone the source code into a container volume, and spin up a dev container for use.
-
-* For Codespaces, install the [GitHub Codespaces](https://marketplace.visualstudio.com/items?itemName=GitHub.codespaces) extension in VS Code, and use the **Codespaces: Create New Codespace** command.
-
-Docker / the Codespace should have at least **4 Cores and 6 GB of RAM (8 GB recommended)** to run a full build. See the [development container README](.devcontainer/README.md) for more information.
-
-## Code of Conduct
-
-This project has adopted the [Microsoft Open Source Code of Conduct](https://opensource.microsoft.com/codeofconduct/). For more information see the [Code of Conduct FAQ](https://opensource.microsoft.com/codeofconduct/faq/) or contact [opencode@microsoft.com](mailto:opencode@microsoft.com) with any additional questions or comments.
-
-## License
-
-Copyright (c) Microsoft Corporation. All rights reserved.
-
-Licensed under the [MIT](LICENSE.txt) license.
+- [VS Code 소스](https://github.com/microsoft/vscode)
+- [VS Code 공식 문서](docs/vscode-docs/)
+- [Open Cowork 전체 명세서](open-cowork-full-spec.md)
