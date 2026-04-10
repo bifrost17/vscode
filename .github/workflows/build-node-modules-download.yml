@@ -1,0 +1,97 @@
+name: Build node_modules (download)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and package node_modules
+    runs-on: ubuntu-22.04
+    env:
+      NPM_ARCH: x64
+      VSCODE_ARCH: x64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Install system build tools
+        run: |
+          sudo apt update -y
+          sudo apt install -y build-essential pkg-config libx11-dev libx11-xcb-dev libxkbfile-dev libnotify-bin libkrb5-dev libsecret-1-dev
+
+      - name: Install build/ dependencies
+        working-directory: build
+        run: |
+          set -e
+          for i in {1..5}; do
+            npm ci && break
+            if [ $i -eq 5 ]; then
+              echo "npm ci failed after 5 attempts" >&2
+              exit 1
+            fi
+            echo "npm ci failed attempt $i, retrying..."
+            sleep 2
+          done
+
+      - name: Install root dependencies
+        run: |
+          set -e
+          for i in {1..5}; do
+            npm ci && break
+            if [ $i -eq 5 ]; then
+              echo "npm ci failed after 5 attempts" >&2
+              exit 1
+            fi
+            echo "npm ci failed attempt $i, retrying..."
+            sleep 2
+          done
+        env:
+          npm_config_arch: ${{ env.NPM_ARCH }}
+          VSCODE_ARCH: ${{ env.VSCODE_ARCH }}
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
+
+      - name: Report sizes
+        run: |
+          du -sh node_modules || true
+          du -sh build/node_modules || true
+          du -sh extensions/*/node_modules 2>/dev/null || true
+
+      - name: Create node_modules archive
+        run: |
+          set -e
+          tar -czf node_modules.tar.gz node_modules
+          ls -lh node_modules.tar.gz
+
+      - name: Create build/node_modules archive
+        run: |
+          set -e
+          if [ -d build/node_modules ]; then
+            tar -czf build-node_modules.tar.gz -C build node_modules
+            ls -lh build-node_modules.tar.gz
+          fi
+
+      - name: Upload node_modules artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: node_modules
+          path: node_modules.tar.gz
+          retention-days: 7
+          if-no-files-found: error
+          compression-level: 0
+
+      - name: Upload build/node_modules artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-node_modules
+          path: build-node_modules.tar.gz
+          retention-days: 7
+          if-no-files-found: warn
+          compression-level: 0
