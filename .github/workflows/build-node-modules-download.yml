@@ -58,40 +58,25 @@ jobs:
           VSCODE_ARCH: ${{ env.VSCODE_ARCH }}
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
 
-      - name: Report sizes
-        run: |
-          du -sh node_modules || true
-          du -sh build/node_modules || true
-          du -sh extensions/*/node_modules 2>/dev/null || true
-
-      - name: Create node_modules archive
+      - name: List all node_modules files
         run: |
           set -e
-          tar -czf node_modules.tar.gz node_modules
-          ls -lh node_modules.tar.gz
+          mkdir -p .build
+          node build/azure-pipelines/common/listNodeModules.ts .build/node_modules_list.txt
+          wc -l .build/node_modules_list.txt
+          du -sh node_modules build/node_modules extensions/*/node_modules 2>/dev/null || true
 
-      - name: Create build/node_modules archive
+      - name: Create combined node_modules archive
         run: |
           set -e
-          if [ -d build/node_modules ]; then
-            tar -czf build-node_modules.tar.gz -C build node_modules
-            ls -lh build-node_modules.tar.gz
-          fi
+          tar -czf all-node_modules.tar.gz --files-from .build/node_modules_list.txt
+          ls -lh all-node_modules.tar.gz
 
-      - name: Upload node_modules artifact
+      - name: Upload combined node_modules artifact
         uses: actions/upload-artifact@v4
         with:
-          name: node_modules
-          path: node_modules.tar.gz
+          name: all-node_modules
+          path: all-node_modules.tar.gz
           retention-days: 7
           if-no-files-found: error
-          compression-level: 0
-
-      - name: Upload build/node_modules artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-node_modules
-          path: build-node_modules.tar.gz
-          retention-days: 7
-          if-no-files-found: warn
           compression-level: 0
