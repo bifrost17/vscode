@@ -19,7 +19,7 @@ import { IEnvironmentService } from '../../environment/common/environment.js';
 import { getTargetPlatform, IExtensionGalleryService, IExtensionIdentifier, IExtensionInfo, IGalleryExtension, IGalleryExtensionAsset, IGalleryExtensionAssets, IGalleryExtensionVersion, InstallOperation, IQueryOptions, IExtensionsControlManifest, isNotWebExtensionInWebTargetPlatform, isTargetPlatformCompatible, ITranslation, SortOrder, StatisticType, toTargetPlatform, WEB_EXTENSION_TAG, IExtensionQueryOptions, IDeprecationInfo, ISearchPrefferedResults, ExtensionGalleryError, ExtensionGalleryErrorCode, IProductVersion, IAllowedExtensionsService, EXTENSION_IDENTIFIER_REGEX, SortBy, FilterType, MaliciousExtensionInfo, ExtensionRequestsTimeoutConfigKey } from './extensionManagement.js';
 import { adoptToGalleryExtensionId, areSameExtensions, getGalleryExtensionId, getGalleryExtensionTelemetryData } from './extensionManagementUtil.js';
 import { IExtensionManifest, TargetPlatform } from '../../extensions/common/extensions.js';
-import { areApiProposalsCompatible, isEngineValid } from '../../extensions/common/extensionValidator.js';
+import { isEngineValid } from '../../extensions/common/extensionValidator.js';
 import { IFileService } from '../../files/common/files.js';
 import { ILogService } from '../../log/common/log.js';
 import { IProductService } from '../../product/common/productService.js';
@@ -609,7 +609,6 @@ export abstract class AbstractExtensionGalleryService implements IExtensionGalle
 	private readonly unpkgResourceApi: string | undefined;
 
 	private readonly commonHeadersPromise: Promise<IHeaders>;
-	private readonly extensionsEnabledWithApiProposalVersion: string[];
 
 	constructor(
 		storageService: IStorageService | undefined,
@@ -625,7 +624,6 @@ export abstract class AbstractExtensionGalleryService implements IExtensionGalle
 	) {
 		this.extensionsControlUrl = productService.extensionsGallery?.controlUrl;
 		this.unpkgResourceApi = productService.extensionsGallery?.extensionUrlTemplate;
-		this.extensionsEnabledWithApiProposalVersion = productService.extensionsEnabledWithApiProposalVersion?.map(id => id.toLowerCase()) ?? [];
 		this.commonHeadersPromise = resolveMarketplaceHeaders(
 			productService.version,
 			productService,
@@ -775,8 +773,8 @@ export abstract class AbstractExtensionGalleryService implements IExtensionGalle
 			try {
 				galleryExtension = await this.getLatestGalleryExtension(extensionInfo, options, resourceApi, extensionGalleryManifest, token);
 				if (isString(galleryExtension)) {
-					if (galleryExtension === 'BUILT_IN_LATEST_IS_OUTDATED') {
-						this.logService.debug(`Skipping query API fallback for auto-update builtin extension ${extensionInfo.id} because the latest gallery version is older than the product version`);
+					if (galleryExtension === 'LATEST_IS_OUTDATED') {
+						this.logService.debug(`Skipping query API fallback for extension ${extensionInfo.id} because the latest gallery version is older than the current version`);
 					} else {
 						// fallback to query
 						this.telemetryService.publicLog2<
@@ -860,17 +858,10 @@ export abstract class AbstractExtensionGalleryService implements IExtensionGalle
 		const rawGalleryExtensionVersion = await this.getValidRawGalleryExtensionVersionFromLatestVersions(rawGalleryExtension, rawGalleryExtension.versions, extensionInfo, options, allTargetPlatforms);
 
 		if (!rawGalleryExtensionVersion) {
-			const extensionId = getGalleryExtensionId(rawGalleryExtension.publisher.publisherName, rawGalleryExtension.extensionName);
-			if (this.productService.builtInExtensionsEnabledWithAutoUpdates?.some(id => id.toLowerCase() === extensionId.toLowerCase())) {
-
-				// For built-in extensions that we need to be updated out of band (productService.builtInExtensionsEnabledWithAutoUpdates)
-				// there are a few interesting scenarios to consider:
-				//   - If we find a matching MAJOR.MINOR version in the gallery that is engine compatible, we should return that version (normal flow).
-				//	 - Otherwise, if we find a newer (MAJOR.MINOR) version in the gallery, it means the product is outdated and we should query all versions to find the best match for that particular product veresion.
-				//   - Otherwise, if we find a older (MAJOR.MINOR) version in the gallery, the product will already be shipping the latest version as built-in, we should skip the query API fallback.
+			if (extensionInfo.currentVersion) {
 				const latestVersion = rawGalleryExtension.versions.length > 0 ? rawGalleryExtension.versions[0].version : undefined;
-				if (latestVersion && (semver.major(latestVersion) < semver.major(this.productService.version) || (semver.major(latestVersion) === semver.major(this.productService.version) && semver.minor(latestVersion) < semver.minor(this.productService.version)))) {
-					return 'BUILT_IN_LATEST_IS_OUTDATED';
+				if (latestVersion && semver.lt(latestVersion, extensionInfo.currentVersion)) {
+					return 'LATEST_IS_OUTDATED';
 				}
 			}
 			return 'NOT_COMPATIBLE';
@@ -1017,15 +1008,6 @@ export abstract class AbstractExtensionGalleryService implements IExtensionGalle
 			return false;
 		}
 
-		// For built-in extensions that have auto updates enabled, lock them in to product's major and minor version
-		if (this.productService.builtInExtensionsEnabledWithAutoUpdates?.some(id => id.toLowerCase() === extension.id.toLowerCase())) {
-			const productMajorMinor = `${semver.major(productVersion.version)}.${semver.minor(productVersion.version)}`;
-			const extensionMajorMinor = `${semver.major(extension.version)}.${semver.minor(extension.version)}`;
-			if (productMajorMinor !== extensionMajorMinor) {
-				return false;
-			}
-		}
-
 		// Specific version
 		if (isString(version)) {
 			if (extension.version !== version) {
@@ -1049,26 +1031,12 @@ export abstract class AbstractExtensionGalleryService implements IExtensionGalle
 				return false;
 			}
 
-			if (!this.areApiProposalsCompatible(extension.id, extension.enabledApiProposals)) {
-				return false;
-			}
-
 			if (!(await this.isEngineValid(extension.id, extension.version, extension.engine, extension.manifestAsset, productVersion))) {
 				return false;
 			}
 		}
 
 		return true;
-	}
-
-	private areApiProposalsCompatible(extensionId: string, enabledApiProposals: string[] | undefined): boolean {
-		if (!enabledApiProposals) {
-			return true;
-		}
-		if (!this.extensionsEnabledWithApiProposalVersion.includes(extensionId.toLowerCase())) {
-			return true;
-		}
-		return areApiProposalsCompatible(enabledApiProposals);
 	}
 
 	private async isEngineValid(extensionId: string, version: string, engine: string | undefined, manifestAsset: IGalleryExtensionAsset | null, productVersion: IProductVersion): Promise<boolean> {
