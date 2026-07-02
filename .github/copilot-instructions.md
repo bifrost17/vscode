@@ -26,7 +26,7 @@ MANDATORY: Always check for compilation errors before running tests or declaring
 - NEVER use `npm run compile` to compile TypeScript files
 
 ### Compilation
-- `src/` changes: run `npm run compile-check-ts-native`
+- `src/` changes: run `npm run typecheck-client`
 - `extensions/` changes: run `npm run gulp compile-extensions`
 - `build/` changes: run `npm run typecheck` in the `build` folder
 - If `#runTasks/getTaskOutput` is available, use the `VS Code - Build` watch task instead
